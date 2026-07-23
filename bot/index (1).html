@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bangla RC Car Control (WiFi)</title>
+<style>
+  body { font-family: sans-serif; text-align: center; background:#111; color:#eee; padding: 20px; }
+  button { font-size: 18px; padding: 14px 22px; margin: 8px; border-radius: 10px; border:none; }
+  #connectBtn { background:#2563eb; color:white; }
+  #micBtn { background:#16a34a; color:white; }
+  #micBtn.listening { background:#dc2626; }
+  input#ipInput { font-size: 16px; padding: 10px; border-radius: 8px; border: none; width: 200px; text-align:center; }
+  #log { text-align:left; max-width:480px; margin:20px auto; background:#1e1e1e; padding:10px;
+         border-radius:8px; height:260px; overflow-y:auto; font-size:14px; }
+  .you { color:#7dd3fc; }
+  .car { color:#86efac; }
+  .err { color:#f87171; }
+  #status { margin-top:10px; font-size:14px; color:#aaa; }
+</style>
+</head>
+<body>
+  <h2>বাংলা RC কার কন্ট্রোল (WiFi)</h2>
+
+  <div>
+    <input type="text" id="ipInput" placeholder="গাড়ির IP, যেমন 192.168.1.42">
+    <button id="connectBtn">সংযোগ পরীক্ষা করুন</button>
+  </div>
+  <br>
+  <button id="micBtn" disabled>🎤 বলুন</button>
+  <div id="status">সংযোগ নেই</div>
+  <div id="log"></div>
+
+<script>
+/*
+  Requires the phone/computer and the ESP32 to be on the SAME WiFi
+  network. Find the car's IP from the Serial Monitor (printed after it
+  connects to WiFi) or from the OLED screen, then type it into the box
+  above. No Bluetooth, no HTTPS required — works from any modern
+  browser including iOS Safari.
+*/
+
+const STORAGE_KEY = 'banglarc_ip';
+let carIp = localStorage.getItem(STORAGE_KEY) || '';
+let recognizing = false;
+
+const ipInput = document.getElementById('ipInput');
+const connectBtn = document.getElementById('connectBtn');
+const micBtn = document.getElementById('micBtn');
+const statusEl = document.getElementById('status');
+const logEl = document.getElementById('log');
+
+ipInput.value = carIp;
+
+function log(who, text) {
+  const p = document.createElement('div');
+  p.className = who;
+  p.textContent = (who === 'you' ? 'আপনি: ' : who === 'car' ? 'গাড়ি: ' : '') + text;
+  logEl.appendChild(p);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function speakBangla(text) {
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'bn-BD';
+  speechSynthesis.speak(u);
+}
+
+function baseUrl() {
+  return 'http://' + carIp;
+}
+
+connectBtn.addEventListener('click', async () => {
+  carIp = ipInput.value.trim();
+  if (!carIp) {
+    statusEl.textContent = 'আগে গাড়ির IP লিখুন';
+    return;
+  }
+  localStorage.setItem(STORAGE_KEY, carIp);
+  statusEl.textContent = 'পরীক্ষা করা হচ্ছে...';
+  try {
+    const res = await fetch(baseUrl() + '/', { method: 'GET' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    statusEl.textContent = 'সংযুক্ত ✅ (' + carIp + ')';
+    log('car', text);
+    micBtn.disabled = false;
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = 'সংযোগ ব্যর্থ ❌ — IP এবং WiFi চেক করুন';
+    log('err', String(err));
+    micBtn.disabled = true;
+  }
+});
+
+async function sendCommand(cmd) {
+  if (!carIp) {
+    statusEl.textContent = 'আগে সংযোগ পরীক্ষা করুন';
+    return;
+  }
+  log('you', cmd);
+  try {
+    const res = await fetch(baseUrl() + '/cmd?c=' + encodeURIComponent(cmd));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const reply = await res.text();
+    log('car', reply);
+    speakBangla(reply);
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = 'সংযোগ বিচ্ছিন্ন — আবার চেষ্টা করুন';
+    log('err', String(err));
+  }
+}
+
+// Map recognized speech to the exact canonical words the car understands.
+// Add more phrasings on the left as you find what your voice tends to produce.
+const COMMAND_MAP = [
+  { keys: ['সামনে', 'সামনে যাও', 'এগিয়ে যাও'], cmd: 'সামনে' },
+  { keys: ['পেছনে', 'পিছনে', 'পিছনে যাও'], cmd: 'পেছনে' },
+  { keys: ['বামে', 'বামে যাও', 'বাম দিকে'], cmd: 'বামে' },
+  { keys: ['ডানে', 'ডানে যাও', 'ডান দিকে'], cmd: 'ডানে' },
+  { keys: ['থামো', 'থাম', 'দাঁড়াও'], cmd: 'থামো' },
+  { keys: ['ফলো করো', 'আমাকে ফলো করো', 'ফলো'], cmd: 'ফলো' },
+  { keys: ['ফলো বন্ধ', 'ফলো বন্ধ করো'], cmd: 'ফলো বন্ধ' },
+  { keys: ['খোলো', 'বক্স খোলো', 'ওষুধ দাও'], cmd: 'খোলো' },
+  { keys: ['বন্ধ করো', 'বক্স বন্ধ করো', 'বন্ধ'], cmd: 'বন্ধ' },
+  { keys: ['স্ট্যাটাস', 'অবস্থা কি'], cmd: 'স্ট্যাটাস' },
+];
+
+function matchCommand(heard) {
+  heard = heard.trim();
+  for (const entry of COMMAND_MAP) {
+    for (const key of entry.keys) {
+      if (heard.includes(key)) return entry.cmd;
+    }
+  }
+  return null;
+}
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition;
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.lang = 'bn-BD';
+  recognition.continuous = true;
+  recognition.interimResults = false;
+
+  recognition.onresult = (event) => {
+    const heard = event.results[event.results.length - 1][0].transcript;
+    log('you', '(শুনেছি) ' + heard);
+    const cmd = matchCommand(heard);
+    if (cmd) {
+      sendCommand(cmd);
+    } else {
+      speakBangla('দুঃখিত, বুঝতে পারিনি');
+    }
+  };
+
+  recognition.onend = () => {
+    if (recognizing) recognition.start(); // keep listening
+  };recognition.onerror = (event) => {
+  console.error('Speech recognition error:', event.error);
+    log('err', 'ভুল (error): ' + event.error);
+  };
+
+  recognition.onspeechstart = () => {
+    log('you', '(শব্দ ধরা পড়েছে...)');
+  };
+
+  recognition.onaudiostart = () => {
+    console.log('Mic audio stream started');
+  };
+  
+} else {
+  statusEl.textContent = 'এই ব্রাউজারে ভয়েস সাপোর্ট নেই';
+}
+
+micBtn.addEventListener('click', () => {
+  if (!recognition) return;
+  recognizing = !recognizing;
+  micBtn.classList.toggle('listening', recognizing);
+  micBtn.textContent = recognizing ? '🎤 শুনছি...' : '🎤 বলুন';
+  if (recognizing) recognition.start();
+  else recognition.stop();
+});
+</script>
+</body>
+</html>
