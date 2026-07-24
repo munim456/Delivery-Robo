@@ -65,8 +65,8 @@
 #include <ESPmDNS.h>
 
 // ---------------- WiFi settings ----------------
-const char* WIFI_SSID     = "Mozahar2";
-const char* WIFI_PASSWORD = "mozahar3118";
+const char* WIFI_SSID     = "Munim";
+const char* WIFI_PASSWORD = "munim1234#";
 
 // mDNS hostname — lets you optionally use http://banglarc.local/ instead
 // of typing the IP. Works on many phones, but not guaranteed on all

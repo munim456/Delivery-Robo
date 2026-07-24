@@ -1,3 +1,6 @@
+
+
+Bangla voice control wifi · HTML
 <!DOCTYPE html>
 <html lang="bn">
 <head>
@@ -21,7 +24,7 @@
 </head>
 <body>
   <h2>বাংলা RC কার কন্ট্রোল (WiFi)</h2>
-
+ 
   <div>
     <input type="text" id="ipInput" placeholder="গাড়ির IP, যেমন 192.168.1.42">
     <button id="connectBtn">সংযোগ পরীক্ষা করুন</button>
@@ -30,7 +33,7 @@
   <button id="micBtn" disabled>🎤 বলুন</button>
   <div id="status">সংযোগ নেই</div>
   <div id="log"></div>
-
+ 
 <script>
 /*
   Requires the phone/computer and the ESP32 to be on the SAME WiFi
@@ -39,19 +42,19 @@
   above. No Bluetooth, no HTTPS required — works from any modern
   browser including iOS Safari.
 */
-
+ 
 const STORAGE_KEY = 'banglarc_ip';
 let carIp = localStorage.getItem(STORAGE_KEY) || '';
 let recognizing = false;
-
+ 
 const ipInput = document.getElementById('ipInput');
 const connectBtn = document.getElementById('connectBtn');
 const micBtn = document.getElementById('micBtn');
 const statusEl = document.getElementById('status');
 const logEl = document.getElementById('log');
-
+ 
 ipInput.value = carIp;
-
+ 
 function log(who, text) {
   const p = document.createElement('div');
   p.className = who;
@@ -59,17 +62,17 @@ function log(who, text) {
   logEl.appendChild(p);
   logEl.scrollTop = logEl.scrollHeight;
 }
-
+ 
 function speakBangla(text) {
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'bn-BD';
   speechSynthesis.speak(u);
 }
-
+ 
 function baseUrl() {
   return 'http://' + carIp;
 }
-
+ 
 connectBtn.addEventListener('click', async () => {
   carIp = ipInput.value.trim();
   if (!carIp) {
@@ -92,13 +95,13 @@ connectBtn.addEventListener('click', async () => {
     micBtn.disabled = true;
   }
 });
-
+ 
 async function sendCommand(cmd) {
   if (!carIp) {
     statusEl.textContent = 'আগে সংযোগ পরীক্ষা করুন';
     return;
   }
-  log('you', cmd);
+  log('you', '→ পাঠানো হচ্ছে: ' + cmd);
   try {
     const res = await fetch(baseUrl() + '/cmd?c=' + encodeURIComponent(cmd));
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -111,9 +114,11 @@ async function sendCommand(cmd) {
     log('err', String(err));
   }
 }
-
+ 
 // Map recognized speech to the exact canonical words the car understands.
 // Add more phrasings on the left as you find what your voice tends to produce.
+// IMPORTANT: the right-hand "cmd" value must exactly match one of the
+// "cmd == ..." checks inside handleCommand() in the Arduino sketch.
 const COMMAND_MAP = [
   { keys: ['সামনে', 'সামনে যাও', 'এগিয়ে যাও'], cmd: 'সামনে' },
   { keys: ['পেছনে', 'পিছনে', 'পিছনে যাও'], cmd: 'পেছনে' },
@@ -124,9 +129,11 @@ const COMMAND_MAP = [
   { keys: ['ফলো বন্ধ', 'ফলো বন্ধ করো'], cmd: 'ফলো বন্ধ' },
   { keys: ['খোলো', 'বক্স খোলো', 'ওষুধ দাও'], cmd: 'খোলো' },
   { keys: ['বন্ধ করো', 'বক্স বন্ধ করো', 'বন্ধ'], cmd: 'বন্ধ' },
-  { keys: ['স্ট্যাটাস', 'অবস্থা কি'], cmd: 'স্ট্যাটাস' },
+  // FIX: this entry was missing entirely, so "তাপমাত্রা কত" never matched
+  // anything and the request never even reached the car.
+  { keys: ['তাপমাত্রা', 'তাপমাত্রা কত', 'তাপমাত্রা কত ডিগ্রি', 'কত ডিগ্রি'], cmd: 'তাপমাত্রা' },
 ];
-
+ 
 function matchCommand(heard) {
   heard = heard.trim();
   for (const entry of COMMAND_MAP) {
@@ -136,7 +143,7 @@ function matchCommand(heard) {
   }
   return null;
 }
-
+ 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition;
 if (SpeechRecognition) {
@@ -144,7 +151,7 @@ if (SpeechRecognition) {
   recognition.lang = 'bn-BD';
   recognition.continuous = true;
   recognition.interimResults = false;
-
+ 
   recognition.onresult = (event) => {
     const heard = event.results[event.results.length - 1][0].transcript;
     log('you', '(শুনেছি) ' + heard);
@@ -152,29 +159,20 @@ if (SpeechRecognition) {
     if (cmd) {
       sendCommand(cmd);
     } else {
+      // FIX: previously this only spoke the error out loud and never
+      // logged it, so an unmatched command looked like total silence.
+      log('err', 'কমান্ড মেলেনি: "' + heard + '"');
       speakBangla('দুঃখিত, বুঝতে পারিনি');
     }
   };
-
+ 
   recognition.onend = () => {
     if (recognizing) recognition.start(); // keep listening
-  };recognition.onerror = (event) => {
-  console.error('Speech recognition error:', event.error);
-    log('err', 'ভুল (error): ' + event.error);
   };
-
-  recognition.onspeechstart = () => {
-    log('you', '(শব্দ ধরা পড়েছে...)');
-  };
-
-  recognition.onaudiostart = () => {
-    console.log('Mic audio stream started');
-  };
-  
 } else {
   statusEl.textContent = 'এই ব্রাউজারে ভয়েস সাপোর্ট নেই';
 }
-
+ 
 micBtn.addEventListener('click', () => {
   if (!recognition) return;
   recognizing = !recognizing;
@@ -186,3 +184,8 @@ micBtn.addEventListener('click', () => {
 </script>
 </body>
 </html>
+ 
+
+
+
+
